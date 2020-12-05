@@ -50,7 +50,7 @@ def minimize_model(X_train, X_val, save_dir, learning_rate=0.06,
         Y_val_test -- predicted lebels for the test set
     """
     # create the tensorflow graph for the model
-    graph = model_graph(X_train, X_val, learning_rate=learning_rate, pretrained=pretrained, get_pd=False)
+    graph = model_graph(learning_rate=learning_rate)
     
     # store the dimenssions of the training set
     if type(X_train) != dict:
