@@ -23,17 +23,17 @@ from model import *
 
 # ### 4.6. Train the model
 
-# Finally we will create a session and run a for loop  for num_epochs, get the mini-batches, and then for each mini-batch you will optimize the function.
-
-def minimize_model(X_train, X_val, save_dir, learning_rate=0.06,
+def minimize_model(X_train, X_val, Y_val, outputs=[4, 6, 8], it=8, save_dir='./save/', learning_rate=0.06,
                    num_epochs=100, start_epoch=0, minibatch_size=64,
                    print_cost=True):
     """
     Implements a SR using ConvNet in Tensorflow. Trains the model inside the sessionand validates the model
     
     Arguments:
-        X_train -- training set, of shape (None, 64, 64, 3)
-        X_val -- validation set, of shape (None, 64, 64, 3) or None
+        X_train -- training set, of shape (None, h, w, 3)
+        X_val -- validation set, of shape (None, h, w, 3) 
+        X_val -- validation set, of shape (None, h, w, 3) 
+        outputs ,it -- model hyperparameters | see model.py for more info
         save_dir -- str | dir to save weights
         num_epochs -- number of epochs of the optimization loop
         start_epoch -- int starting epoch
@@ -44,7 +44,7 @@ def minimize_model(X_train, X_val, save_dir, learning_rate=0.06,
 
     """
     # create the tensorflow graph for the model
-    graph = model_graph(learning_rate=learning_rate)
+    graph = model_graph(outputs=[4, 6, 8], it=8, learning_rate=learning_rate)
     
     n_C0 = n_CY = 3
 
@@ -91,7 +91,7 @@ def minimize_model(X_train, X_val, save_dir, learning_rate=0.06,
             
         # divide the training set into 'num_minibatches' minibatches
         minibatches = mllib.random_mini_batches_from_SSD_no_gt(X_train, minibatch_size)
-        minibatches_val = mllib.random_mini_batches_no_gt(X_val, minibatch_size)
+        minibatches_val = mllib.random_mini_batches(X_val, Y_val, minibatch_size)
         minibatch_processed = 0
 
         # iterate over the minibaches
@@ -119,14 +119,14 @@ def minimize_model(X_train, X_val, save_dir, learning_rate=0.06,
         if print_cost == True :
             costs.append(minibatch_cost)
             sys.stdout.write("\033[K")
-            print ("Cost after epoch %i: %f | lr: %f" % (epoch, minibatch_cost, sess.run(learning_rate))) 
+            print ("Cost after epoch %i: %f" % (epoch, minibatch_cost)) 
         #
         if epoch == (num_epochs-1) or (epoch % 1 == 0):
             # save the model
             print('Saving Progress...', end='\r')
 
             # save one of the train inferences 
-            Y_pred = sess.run(Z_final, feed_dict={X:minibatch_X})
+            Y_pred = sess.run(Z_final[-1], feed_dict={X:minibatch_X})
             print(f'max = {np.max(Y_pred[0])} | min = {np.min(Y_pred[0])} | mean = {np.mean(Y_pred[0])} | unique = {np.unique(Y_pred[0])}')
             cv2.imwrite(save_dir+f'/demo1_'+str(epoch)+'.png', Y_pred[0] * 255)
 
@@ -134,10 +134,26 @@ def minimize_model(X_train, X_val, save_dir, learning_rate=0.06,
             #         'cnn_NAS'+str(epoch)+'.pb', as_text=False)
             save_path = saver.save(sess, os.path.join(save_dir, f'zdce_{epoch}.ckpt'))
             parameters_dict = sess.run(parameters) 
-            with open(save_dir, f'zdce_{epoch}.pickle', 'wb') as handle:
+            with open(os.path.join(save_dir, f'zdce_{epoch}.pickle'), 'wb') as handle:
                 p.dump(parameters_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
             print(f'Progress saved in {save_path}', end='\r')
-        
+
+        # evaluate the model after every 5 epochs
+        if epoch == 0 and epoch % 5 == 0:
+            val_psnr = [0 for i in range(len(Z_final))]
+            for minibatch in minibatches_val:
+                # Select a minibatch
+                minibatch_X, minibatch_Y = minibatch
+                # val_enhances = sess.run(Z_final, feed_dict={X:minibatch_X})
+
+                # calculate PSNR
+                for i in range(len(Z_final)):
+                    val_psnr[i] += sess.run(tf.reduce_mean(tf.image.psnr(Z_final[i], minibatch_Y, 1.0)), feed_dict={X:minibatch_X})
+
+            val_pasn = [val_psnr[i]/len(minibatches_val) for i in range(len(val_psnr))]
+            print()
+            print(f'Dev set PSNR after {epoch} epochs as (iteration, value) pairs = {list(zip(outputs, val_psnr))}')
+    
     print()
     parameters = sess.run(parameters) 
     # Y_pred = sess.run(Z_final, feed_dict={X:X_train[:10]})
@@ -150,10 +166,10 @@ def minimize_model(X_train, X_val, save_dir, learning_rate=0.06,
 if __name__ == '__main__':
 
     # ll_dir_train = "/home/ubuntu/efs/saket/datasets/SICE/train/"
-    ll_dir_train = '/home/ubuntu18/Projects/low_light/metric/LOLdataset/our485/low/'
+    ll_dir_train = '../LOLdataset/our485/mix/'
 
-    # ll_dir_val = "/home/ubuntu/efs/saket/datasets/SICE/val/"
-    ll_dir_val = '/home/ubuntu18/Projects/low_light/metric/LOLdataset/our485/val/high/'
+    X_val_dir = '../LOLdataset/our485/val/low/'
+    Y_val_dir = '../LOLdataset/our485/val/high/'
 
 
     # Load the dataset
@@ -162,7 +178,8 @@ if __name__ == '__main__':
 
 
     print('Val set...')
-    X_val = mllib.load_images_into_array(ll_dir_val)
+    X_val = mllib.load_images_into_array(X_val_dir)
+    Y_val = mllib.load_images_into_array(Y_val_dir)
 
 
     # Check the dim of the dataset
@@ -170,6 +187,6 @@ if __name__ == '__main__':
     print ("number of validation examples = " + str(X_val.shape[0]))
     print ("X_val shape: " + str(X_val.shape))
 
-    parameter = minimize_model(X_train, X_val, save_dir='./exdark',
-                                start_epoch=0, num_epochs=501, minibatch_size=1, learning_rate=0.001,
+    parameter = minimize_model(X_train, X_val,Y_val, outputs=[4, 6, 8], it=8, save_dir='./exdark',
+                                start_epoch=0, num_epochs=101, minibatch_size=12, learning_rate=0.001,
                                 print_cost=True)

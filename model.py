@@ -46,7 +46,7 @@ def initialize_parameters(parameter_dims):
 
 # ### 4.3. Forward propagation
 
-def forward_propagation(X, parameters, it=8):
+def forward_propagation(X, parameters, it=8, outputs=[4, 6, 8]):
     '''
     Implements the forward propagation for the model. This function is inspired by Zero DCE proposed by 
     Guo1 et. al.
@@ -86,10 +86,13 @@ def forward_propagation(X, parameters, it=8):
     alphas = tf.split(alpha_stacked, num_or_size_splits=it, axis=-1)
 
     Z_final = X
+    Z_final_list = []
     for i in range(it):
         Z_final = tf.math.add(Z_final, alphas[i] * (tf.math.pow(Z_final, 2) - Z_final), name=f'y{i+1}')
+        if it in outputs:
+            Z_final_list.append(Z_final)
 
-    return alpha_stacked, Z_final
+    return alpha_stacked, Z_final_list
 
 def alpha_total_variation(A):
     '''

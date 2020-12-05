@@ -17,7 +17,7 @@ from model import *
 # - create an optimizer
 # 
 # We will use the adam optimizer for faster convergence
-def model_graph(learning_rate=0.003, it=8):
+def model_graph(learning_rate=0.003, outputs=[4, 6, 8], it=8):
     """
     Creates tensorflow graph for the model with cost and optimizer
     
@@ -65,17 +65,28 @@ def model_graph(learning_rate=0.003, it=8):
     pprint(parameters)
         
     # Forward propagation: Build the forward propagation in the tensorflow graph
-    A, Z_final = forward_propagation(X, parameters)
+    A, Z_final = forward_propagation(X, parameters, outputs=[4, 6, 8], it=8)
+    
+    # exposure_control_loss
+    e_loss = 0
+    for Z in Z_final:
+        e_loss += exposure_control_loss(Z)
 
-    cost = exposure_control_loss(Z_final) + 1.25 * color_constency_loss(Z_final) +  (1/8) * alpha_total_variation(A) + 0.75 * spatial_consistency_loss(Z_final, X)
+    # color_constency_loss
+    c_loss = 0
+    for Z in Z_final:
+        c_loss += color_constency_loss(Z)
 
+    # color_constency_loss
+    sc_loss = 0
+    for Z in Z_final:
+        sc_loss += spatial_consistency_loss(Z, X)
+
+    cost = 1.75 * e_loss + 1 * c_loss  +  7 * alpha_total_variation(A) + 8 * sc_loss
+    
+    # cost = exposure_control_loss(Z_final) + 1.25 * color_constency_loss(Z_final) +  (1/8) * alpha_total_variation(A) + 0.75 * spatial_consistency_loss(Z_final, X)
     # Backpropagation: Define the tensorflow optimizer. Use an AdamOptimizer that minimizes the cost.
-    global_step = tf.Variable(0, trainable=False, dtype=tf.float64)
-    starter_learning_rate = learning_rate
-    learning_rate = learning_rate * tf.math.pow(0.8, tf.dtypes.cast(tf.math.divide(1000, global_step), 
-                                                                        dtype=tf.float32))
     # Passing global_step to minimize() will increment it at each step.
-    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(
-                                                                                cost, global_step=global_step)
+    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
         
     return X, parameters, Z_final, cost, optimizer, learning_rate
