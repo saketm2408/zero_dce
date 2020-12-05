@@ -29,8 +29,8 @@ def initialize_parameters(parameter_dims):
     Returns:
         parameters --  a dictionary of tensors containing weights
                     parameter = {
-                                    'subpixel' : <weight tensor for subpixel conv>,
-                                    'tail_0' : <weight tensor for tail>
+                                    'conv2D-0' : <weight tensor for  conv>,
+                                    'conv2D-1' : <weight tensor for  conv>
                                 }
     '''
     parameters = {}
@@ -48,14 +48,14 @@ def initialize_parameters(parameter_dims):
 
 def forward_propagation(X, parameters, it=8):
     '''
-    Implements the forward propagation for the model:
-    e.g. CONV2D -> RELU -> RESBLOCK -> RESBLOCK -> CONV2D -> SUBPIXEL_UPSAMPLING
+    Implements the forward propagation for the model. This function is inspired by Zero DCE proposed by 
+    Guo1 et. al.
     
     Arguments:
         X -- input dataset placeholder, of shape (input size, number of examples)
         parameters -- python dictionary containing your parameters the shapes are given 
                         in initialize_parameters
-        train -- str | default full | can be one of (full, bicubic, div2k)
+        it -- int | default 8 | number of times to apply the curve transformation
     Returns:
         Z_final -- the output of the last unit
     '''         
@@ -93,6 +93,15 @@ def forward_propagation(X, parameters, it=8):
 
 def alpha_total_variation(A):
     '''
+    1. This function calculates total variation loss. 
+    2. Total Variation or TV loss is a no reference loss function originally implemented by Guo1 et. al. in the
+        paper Zero DCE.
+    3. The intuition behind this loss is to preserve the monotonicity relations between neighboring pixels.
+
+    Args ::
+        A - tensor | image transformation coefs
+    Return ::
+        loss - float | the value of the loss
     '''
     delta_h = A[:, 1:, :, :] - A[:, :-1, :, :]
     delta_w = A[:, :, 1:, :] - A[:, :, :-1, :]
@@ -105,14 +114,30 @@ def alpha_total_variation(A):
 
 def exposure_control_loss(enhances, rsize=16, E=0.6):
     '''
+    1. This loss helps restraining under-/over-exposed regions of the input image.
+    2. This is also a no reference loss function originally implemented by Guo1 et. al. in the paper Zero DCE.
+    N.B. - I have found that this loss function can be implented in other image generation tasks and
+        it has the ability to get rid of artifacts (blocking artifacts to be specific)
+
+    Args ::
+        enhances - tensor | reformed image (output) at various iterations
+        rsize - int | default 16 | denotes the size of the window to adjust the intensity | an hyperparameter
+                            that can be tuned
+        E - float | default 0.6 | the av. intensity of the ouput image | this hypeerparameter can also be tuned
+                            but I have found that 0.6 give the best results as suggested by the authors
     '''
-    avg_intensity = tf.reduce_mean(tf.nn.avg_pool(enhances, [1, 16, 16, 1], [1, 1, 1, 1], padding='VALID', name='avg_pool_for_exposure_control_loss'), 1)
+    avg_intensity = tf.reduce_mean(tf.nn.avg_pool(enhances, [1, rsize, rsize, 1], [1, 1, 1, 1], padding='VALID', name='avg_pool_for_exposure_control_loss'), 1)
     exp_loss = tf.reduce_mean(tf.math.abs(avg_intensity - E))
 
     return exp_loss
 
 def color_constency_loss(enhances):
     '''
+    This loss function is inspired by the Gray-World color constancy hypothesis which states that
+    color in each sensor channel averages to gray over the entire image.
+
+    Args ::
+        enhances - tensor | reformed image (output) at various iterations
     '''
     plane_avg = tf.reduce_mean(tf.reduce_mean(enhances, 1), 2)
     col_loss = ((plane_avg[:, 0] - plane_avg[:, 1]) ** 2 ) + ((plane_avg[:, 1] - plane_avg[:, 2]) ** 2 ) + ((plane_avg[:, 2] - plane_avg[:, 0]) ** 2 )
@@ -122,6 +147,13 @@ def color_constency_loss(enhances):
 
 def spatial_consistency_loss(enhances, originals, rsize=4):
     '''
+    This loss function encourages spatial coherence of the enhanced image through preserving the difference 
+    of neighboring regions between the input image and its enhanced version. 
+
+    Arguments : 
+        enhances - tensor | reformed image (output) at various iterations
+        originals - tensor | original image taken in suboptimal lighting condition
+        rsize - int | default 16 | denotes the size of the window to copare the difference
     ''' 
     consistency_kernel = tf.constant(np.array([[[[ 0.,  0.,  0.,  0.]],
                 [[-1.,  0.,  0.,  0.]],
@@ -135,6 +167,7 @@ def spatial_consistency_loss(enhances, originals, rsize=4):
                 [[ 0., -1.,  0.,  0.]],
                 [[ 0.,  0.,  0.,  0.]]]]), dtype=tf.dtypes.float32)
     
+    ## N.B. the array [0.3, 0.59, 0.1] is also a hyper-parameter, which can be tuned.
     to_gray = tf.constant(np.array([0.3, 0.59, 0.1]).reshape((1, 1, 3, 1)), dtype=tf.dtypes.float32)
 
     enh_gray =  tf.nn.conv2d(enhances, to_gray, strides=[1, 1, 1, 1], padding='VALID', name='conv2D-scl1')
@@ -146,107 +179,3 @@ def spatial_consistency_loss(enhances, originals, rsize=4):
     cost = tf.reduce_mean((tf.nn.conv2d(enh_pool, consistency_kernel, strides=[1, 1, 1, 1], padding='VALID') - tf.nn.conv2d(orig_pool, consistency_kernel, strides=[1, 1, 1, 1], padding='VALID')) ** 2)
     
     return cost
-
-# ### 4.4. Cost function
-
-# We will use simmple squared error cost function for this task. <br>
-# Assumption : Every observation is independant of each other.
-
-
-def gram_matrix(A):
-    """
-    Argument:
-    A -- matrix of shape (n_C, n_H*n_W)
-    
-    Returns:
-    GA -- Gram matrix of A, of shape (n_C, n_C)
-    """
-    
-    GA = tf.matmul(A, tf.transpose(A)) # '*' is elementwise mul in numpy
-    
-    return GA
-
-def compute_layer_style_cost(a_S, a_G):
-    """
-    Arguments:
-    a_S -- tensor of dimension (1, n_H, n_W, n_C), hidden layer activations representing style of the image S 
-    a_G -- tensor of dimension (1, n_H, n_W, n_C), hidden layer activations representing style of the image G
-    
-    Returns: 
-    J_style_layer -- tensor representing a scalar value, style cost defined above by equation (2)
-    """
-    
-    # Retrieve dimensions from a_G 
-    m, n_H, n_W, n_C = a_G.get_shape().as_list()
-    
-    # Reshape the images to have them of shape (n_H*n_W, n_C)
-    a_S = tf.reshape(a_S, [n_H*n_W, n_C])
-    a_G = tf.reshape(a_G, [n_H*n_W, n_C])
-
-    # Computing gram_matrices for both images S and G
-    GS = gram_matrix(tf.transpose(a_S)) #notice that the input of gram_matrix is A: matrix of shape (n_C, n_H*n_W)
-    GG = gram_matrix(tf.transpose(a_G))
-
-    # Computing the loss
-    J_style_layer = tf.reduce_sum((GS - GG)**2) / (4 * n_C**2 * (n_W * n_H)**2)
-    
-    
-    return J_style_layer
-
-def compute_style_cost(model_Z, model_Y, STYLE_LAYERS):
-    """
-    Computes the overall style cost from several chosen layers
-    
-    Arguments:
-    model_Z -- vgg19 model having input layer as the SR image
-    model_Y -- vgg19 model having input layer as the HR image
-    STYLE_LAYERS -- A python list containing:
-                        - the names of the layers we would like to extract style from
-                        - a coefficient for each of them
-    
-    Returns: 
-    J_style -- tensor representing a scalar value, style cost defined above by equation (2)
-    """
-    
-    # initialize the overall style cost
-    J_style = 0
-
-    for layer_name, coeff in STYLE_LAYERS:
-
-        J_style_layer = compute_layer_style_cost( model_Y[layer_name],  model_Z[layer_name])
-
-        # Add coeff * J_style_layer of this layer to overall style cost
-        J_style += coeff * J_style_layer
-
-    return J_style# cost function
-
-def compute_content_cost(Z_final, Y):
-    '''
-    Computes the cost
-    
-    Arguments:
-        Z_final -- output of forward propagation SR image
-        Y -- "true" labels vector placeholder, same shape as Z_final
-    
-    Returns:
-        cost - Tensor of the cost function
-    '''
-    
-    J_content = tf.losses.absolute_difference(Y, Z_final)
-        
-    return J_content
-
-def compute_total_cost(J_style, J_content):
-    '''
-    '''
-    return 0.1 * J_style + J_content
-
-
-def compute_bic_cost(Z_bic, Y, shape):
-    '''
-    '''
-    Y_down = tf.image.resize_images(Y, shape, method=tf.image.ResizeMethod.BICUBIC)
-
-    J = tf.losses.absolute_difference(Y_down, Z_bic)
-        
-    return J
