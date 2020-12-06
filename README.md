@@ -17,9 +17,11 @@ The code base uses tensorlow 1.x
 
 
 ### Test: 
-
+1. To test from tflite file use python3 infer_tflite.py <low_lght_image>
 
 ### Train: 
+pyhton train.py <br>
+N.B. executing the above command will train the model with default hyperparameters
 
 
 ## Bibtex
