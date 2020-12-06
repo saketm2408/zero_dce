@@ -139,7 +139,7 @@ def minimize_model(X_train, X_val, Y_val, outputs=[4, 6, 8], it=8, save_dir='./s
             print(f'Progress saved in {save_path}', end='\r')
 
         # evaluate the model after every 5 epochs
-        if epoch == 0 and epoch % 5 == 0:
+        if epoch != 0 and epoch % 5 == 0:
             val_psnr = [0 for i in range(len(Z_final))]
             for minibatch in minibatches_val:
                 # Select a minibatch
