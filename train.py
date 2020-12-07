@@ -27,7 +27,7 @@ def minimize_model(X_train, X_val, Y_val, outputs=[4, 6, 8], it=8, save_dir='./s
                    num_epochs=100, start_epoch=0, minibatch_size=64,
                    print_cost=True):
     """
-    Implements a SR using ConvNet in Tensorflow. Trains the model inside the sessionand validates the model
+    Implements a Low Light Enhancement using ConvNet in Tensorflow. Trains the model inside the sessionand validates the model
     
     Arguments:
         X_train -- training set, of shape (None, h, w, 3)
