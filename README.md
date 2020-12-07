@@ -16,6 +16,13 @@ The code base uses tensorlow 1.x
 4. matplotlib
 
 
+### To get the tflite file
+tflite_convert --output_file=zdce.tflite --graph_def_file=zdce.pb --input_arrays=x --output_arrays=y4
+
+## To get pb file from the checkpoints
+1. extrct the checkpoints
+2. python3 freeze_graph.py --model_dir ./checkpoints --output_node_names y4
+
 ### Test: 
 1. To test from tflite file use python3 infer_tflite.py <low_lght_image>
 
@@ -39,7 +46,6 @@ N.B. executing the above command will train the model with default hyperparamete
 # References
 [1] Zero-Reference Deep Curve Estimation for Low-Light Image Enhancement - CVPR 2020 [link](https://openaccess.thecvf.com/content_CVPR_2020/papers/Guo_Zero-Reference_Deep_Curve_Estimation_for_Low-Light_Image_Enhancement_CVPR_2020_paper.pdf)
 
-[2] Low-light dataset - [link](https://drive.google.com/file/d/1HiLtYiyT9R7dR9DRTLRlUUrAicC4zzWN/view)
 
 # Maintainer
 [1] This repo is created and maintained by Saket Mohanty
